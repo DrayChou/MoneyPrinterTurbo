@@ -1,97 +1,187 @@
-﻿# MoneyPrinterTurbo 统一启动脚本 (使用 uv)
-Write-Host "MoneyPrinterTurbo 启动助手" -ForegroundColor Cyan
+﻿# MoneyPrinterTurbo Unified Startup Script (using uv)
+Write-Host "MoneyPrinterTurbo Startup Helper" -ForegroundColor Cyan
 
-# 定义项目根目录
+# Define project root directory
 $projectRoot = $PSScriptRoot
 if (-not $projectRoot) {
     $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 Set-Location $projectRoot
 
-# 检查 uv 是否安装
+# Check if uv is installed
 $uvInstalled = $null
 try {
     $uvInstalled = Get-Command uv -ErrorAction SilentlyContinue
 } catch {}
 
 if (-not $uvInstalled) {
-    Write-Host "未检测到 uv 工具。是否要安装？ (Y/N)" -ForegroundColor Yellow
+    Write-Host "UV tool not detected. Do you want to install it? (Y/N)" -ForegroundColor Yellow
     $response = Read-Host
     if ($response -eq "Y" -or $response -eq "y") {
-        Write-Host "正在安装 uv..." -ForegroundColor Cyan
+        Write-Host "Installing uv..." -ForegroundColor Cyan
         pip install uv
     } else {
-        Write-Host "请手动安装 uv 后再运行此脚本：pip install uv" -ForegroundColor Red
+        Write-Host "Please install uv manually and run this script again: pip install uv" -ForegroundColor Red
         exit 1
     }
 }
 
-# 检查虚拟环境
+# Check virtual environment
 $venvPath = Join-Path -Path $projectRoot -ChildPath ".venv"
 if (-not (Test-Path $venvPath)) {
-    Write-Host "虚拟环境不存在。是否创建新环境？ (Y/N)" -ForegroundColor Yellow
+    Write-Host "Virtual environment does not exist. Create new environment? (Y/N)" -ForegroundColor Yellow
     $response = Read-Host
     if ($response -eq "Y" -or $response -eq "y") {
-        Write-Host "正在创建 Python 3.11 虚拟环境..." -ForegroundColor Cyan
+        Write-Host "Creating Python 3.11 virtual environment..." -ForegroundColor Cyan
         uv venv -p=3.11 .venv
         
-        Write-Host "正在安装依赖..." -ForegroundColor Cyan
+        Write-Host "Installing dependencies..." -ForegroundColor Cyan
         uv pip install -r requirements.txt
     } else {
-        Write-Host "无法继续，需要虚拟环境" -ForegroundColor Red
+        Write-Host "Cannot continue without virtual environment" -ForegroundColor Red
         exit 1
     }
-} else {    # 如果环境存在，询问是否要同步依赖
-    Write-Host "虚拟环境已存在。是否同步最新依赖？ (Y/N)" -ForegroundColor Yellow
+} else {
+    # If environment exists, ask to sync dependencies
+    Write-Host "Virtual environment exists. Sync latest dependencies? (Y/N)" -ForegroundColor Yellow
     $response = Read-Host
     if ($response -eq "Y" -or $response -eq "y") {
-        Write-Host "正在同步依赖..." -ForegroundColor Cyan
+        Write-Host "Syncing dependencies..." -ForegroundColor Cyan
         uv pip sync requirements.txt
-    }    # 检查关键依赖是否已安装
+    }
+    
+    # Check critical dependencies
+    Write-Host "Checking critical dependencies..." -ForegroundColor Cyan
+    $missingDeps = @()
+    
+    # Critical dependencies list
+    $criticalDeps = @(
+        "streamlit",
+        "fastapi",
+        "blinker",
+        "click",
+        "google.protobuf",
+        "win32_setctime",
+        "typing_extensions",
+        "toml",
+        "colorama"
+    )
+    
+    foreach ($dep in $criticalDeps) {
+        $depName = $dep
+        
+        # Special package name mappings
+        switch ($dep) {
+            "google.protobuf" { $importName = "google.protobuf"; $depName = "protobuf" }
+            "win32_setctime" { $importName = "win32_setctime"; $depName = "win32-setctime" }
+            "typing_extensions" { $importName = "typing_extensions"; $depName = "typing-extensions" }
+            default { $importName = $dep.Replace(".", " ").Split(" ")[0] }
+        }
+        
+        $pythonCode = @"
+try:
+    import $importName
+    print('OK')
+except ImportError:
+    print('MISSING')
+    exit(1)
+"@
+        
+        # Execute Python code
+        & $venvPath\Scripts\python.exe -c $pythonCode
+        if ($LASTEXITCODE -ne 0) {
+            $missingDeps += $depName
+        }
+    }
+    
+    # If there are missing dependencies, prompt to install
+    if ($missingDeps.Count -gt 0) {
+        Write-Host "Missing dependencies detected: $($missingDeps -join ', ')" -ForegroundColor Yellow
+        Write-Host "Install missing dependencies? (Y/N)" -ForegroundColor Yellow
+        $response = Read-Host
+        if ($response -eq "Y" -or $response -eq "y") {
+            Write-Host "Installing missing dependencies..." -ForegroundColor Cyan
+            
+            # Try to install all missing dependencies
+            $depArgs = $missingDeps
+            & $venvPath\Scripts\python.exe -m pip install $depArgs
+            
+            # Verify installation
+            $stillMissing = @()
+            
+            foreach ($dep in $missingDeps) {
+                $importName = $dep.Replace("-", "_")
+                $checkCode = @"
+try:
+    import $importName
+    print('OK')
+    exit(0)
+except ImportError:
+    print('MISSING')
+    exit(1)
+"@
+                & $venvPath\Scripts\python.exe -c $checkCode
+                if ($LASTEXITCODE -ne 0) {
+                    $stillMissing += $dep
+                }
+            }
+            
+            if ($stillMissing.Count -gt 0) {
+                Write-Host "Warning: The following dependencies failed to install: $($stillMissing -join ', ')" -ForegroundColor Red
+            } else {
+                Write-Host "All dependencies installed successfully" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "Warning: Missing dependencies may prevent proper operation" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "All critical dependencies verified" -ForegroundColor Green
+    }
 }
 
-# 激活虚拟环境
+# Activate virtual environment
 $activateScript = Join-Path -Path $venvPath -ChildPath "Scripts\Activate.ps1"
 if (Test-Path $activateScript) {
     & $activateScript
     
-    # 显示Python版本验证环境
-    Write-Host "当前环境: " -NoNewline -ForegroundColor Cyan
+    # Display Python version
+    Write-Host "Current environment: " -NoNewline -ForegroundColor Cyan
     python --version
-      # 启动两个终端窗口分别运行服务
-    Write-Host "启动 MoneyPrinterTurbo 服务..." -ForegroundColor Green
     
-    # 定义虚拟环境中的 Python 和 Streamlit 路径
+    # Start services
+    Write-Host "Starting MoneyPrinterTurbo services..." -ForegroundColor Green
+    
+    # Define paths
     $pythonPath = Join-Path -Path $venvPath -ChildPath "Scripts\python.exe"
     $streamlitPath = Join-Path -Path $venvPath -ChildPath "Scripts\streamlit.exe"
     
-    # 验证路径是否存在
+    # Verify paths
     if (-not (Test-Path $pythonPath)) {
-        Write-Host "警告: 找不到 Python 可执行文件: $pythonPath" -ForegroundColor Yellow
-        $pythonPath = "python"  # 回退到系统 Python
+        Write-Host "Warning: Python executable not found: $pythonPath" -ForegroundColor Yellow
+        $pythonPath = "python"  # Fallback to system Python
     }
     
     if (-not (Test-Path $streamlitPath)) {
-        Write-Host "警告: 找不到 streamlit 可执行文件，尝试通过模块启动" -ForegroundColor Yellow
-        # 使用 Python 启动 streamlit 模块
+        Write-Host "Warning: Streamlit executable not found, trying module startup" -ForegroundColor Yellow
         $streamlitCommand = "$pythonPath -m streamlit run .\webui\Main.py --browser.gatherUsageStats=False --server.enableCORS=True"
     } else {
         $streamlitCommand = "$streamlitPath run .\webui\Main.py --browser.gatherUsageStats=False --server.enableCORS=True"
     }
-      # 启动 API 服务
-    Write-Host "正在启动 API 服务..." -ForegroundColor Cyan
+    
+    # Start API service
+    Write-Host "Starting API service..." -ForegroundColor Cyan
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$projectRoot'; & '${pythonPath}' main.py"
     Start-Sleep -Seconds 2
-      # 启动 Web UI
-    Write-Host "正在启动 Web UI..." -ForegroundColor Cyan
-    # 使用 Invoke-Expression 确保命令正确解析
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$projectRoot'; & $pythonPath -m streamlit run .\webui\Main.py --browser.gatherUsageStats=False --server.enableCORS=True"
     
-    # 显示信息
-    Write-Host "`n✅ 所有服务已启动" -ForegroundColor Green
-    Write-Host "`n📊 Web 界面: http://localhost:8501" -ForegroundColor Magenta
-    Write-Host "📘 API 文档: http://127.0.0.1:8080/docs" -ForegroundColor Magenta
-    Write-Host "`n提示: 关闭命令行窗口将停止相应的服务" -ForegroundColor Yellow
+    # Start Web UI
+    Write-Host "Starting Web UI..." -ForegroundColor Cyan
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$projectRoot'; $streamlitCommand"
+    
+    # Display info
+    Write-Host "`nAll services started" -ForegroundColor Green
+    Write-Host "`nWeb Interface: http://localhost:8501" -ForegroundColor Magenta
+    Write-Host "API Documentation: http://127.0.0.1:8080/docs" -ForegroundColor Magenta
+    Write-Host "`nNote: Closing command windows will stop respective services" -ForegroundColor Yellow
 } else {
-    Write-Host "错误: 无法找到虚拟环境激活脚本" -ForegroundColor Red
+    Write-Host "Error: Virtual environment activation script not found" -ForegroundColor Red
 }

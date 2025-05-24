@@ -21,3 +21,4 @@ protobuf>=4.25.0
 win32-setctime>=1.1.0
 typing-extensions>=4.8.0
 toml>=0.10.2
+colorama>=0.4.6
