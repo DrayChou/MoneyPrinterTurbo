@@ -189,14 +189,37 @@ docker-compose up
 
 #### ① 创建虚拟环境
 
-建议使用 [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html) 创建 python 虚拟环境
+可以使用 [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html) 或 [uv](https://github.com/astral-sh/uv) 创建 python 虚拟环境
 
+**使用 conda (原始方法):**
 ```shell
 git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 cd MoneyPrinterTurbo
 conda create -n MoneyPrinterTurbo python=3.11
 conda activate MoneyPrinterTurbo
 pip install -r requirements.txt
+```
+
+**使用 uv (推荐，安装更快):**
+```shell
+git clone https://github.com/harry0703/MoneyPrinterTurbo.git
+cd MoneyPrinterTurbo
+# 安装 uv 工具 (如果尚未安装)
+pip install uv
+# 创建虚拟环境并安装依赖
+uv venv -p=3.11 .venv
+# Windows 系统激活虚拟环境
+.\.venv\Scripts\Activate.ps1
+# Linux/MacOS 激活虚拟环境
+# source .venv/bin/activate
+# 安装项目依赖
+uv pip install -r requirements.txt
+```
+
+**使用快速启动脚本 (Windows PowerShell):**
+```powershell
+# 克隆代码后，只需运行一条命令即可设置环境并启动服务
+.\start.ps1
 ```
 
 #### ② 安装好 ImageMagick
